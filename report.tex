@@ -1,0 +1,529 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{metropolis}
+% \usetheme{gotham}
+% \useoutertheme[
+%   progressbar position=foot,   % 进度条位置：foot/head/none
+%   progressbar style=rectangle, % 样式：rectangle/rounded box/circle
+%   numbering=totalframenumber   % 页码样式：none/framenumber/totalframenumber
+% ]{gotham}
+
+\usefonttheme{professionalfonts} % 使用系统/自定字体
+
+
+% === 字体设置 ===
+\usepackage[UTF8,scheme=plain,fontset=none]{ctex}
+\setCJKmainfont{Source Han Serif CN}[BoldFont={Source Han Serif CN Bold}]
+\setCJKsansfont{Source Han Sans CN}[BoldFont={Source Han Sans CN Bold}]
+% \setCJKmonofont{Sarasa Mono CN}
+
+
+% beamer 已加载 hyperref；加 unicode 以支持中文书签
+\hypersetup{unicode}
+
+% define paragraph
+\providecommand{\paragraph}[1]{\smallskip\textbf{#1}\par}
+
+% 常用包
+\usepackage{longtable}
+\usepackage{booktabs}   % 提供 \toprule, \midrule, \bottomrule (精美三线表)
+\usepackage{adjustbox}  % 提供 \begin{adjustbox} (防止表格超宽)
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\graphicspath{{.}{./figs/}{./images/}{./images_in_paper/}}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{float}
+\usepackage{svg}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{threeparttable}
+\usepackage{minted}
+% 超链接（beamer 已加载 hyperref，这里只补选项）
+% \hypersetup{unicode=true}
+
+% 编号风格
+\setbeamertemplate{caption}[numbered]
+\setbeamertemplate{caption label separator}{.}
+
+\title{SmartMan:基于QWen的bash命令生成工具}
+\author{屈阳\\
+李孟霖\\
+刘治权\\
+赵浦渊}
+\date{\today}
+
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\section{研究背景}
+\begin{frame}[fragile]{现状与痛点}
+  \begin{itemize}
+    \item \textbf{传统工具的局限}
+    \begin{itemize}
+      \item 传统 Linux 帮助工具（如 \texttt{man}、\texttt{tldr}）核心支持\alert{“依据工具名查询具体用法”}。
+      \item 当面对模糊的自然语言需求时（如“查找近 3 天修改过的 sh 文件并统计行数”），用户往往无从下手。
+    \end{itemize}
+    \vspace{0.3cm}
+    \item \textbf{云端大模型“大材小用”}
+    \begin{itemize}
+      \item 依赖闭源或云端旗舰模型存在\alert{“杀鸡用牛刀”}的资源浪费。
+      \item 严重依赖网络连接，无法在\alert{高离线环境}、\alert{校园内网}或\alert{敏感生产宿主机}中直接使用，且存在数据隐私泄露风险。
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{设计哲学与目标}
+  致敬 UNIX 哲学:\textbf{“Do one job and do it right.”}
+
+    \begin{itemize}
+    \item \textbf{设计思路}
+    \begin{itemize}
+      \item 采用\alert{轻量化开源基座模型} + \alert{参数高效微调（PEFT/LoRA）}。
+      \item 打造全本地端侧运行、面向 \textbf{NL2Bash} 任务高度垂直的 AI 助手。
+    \end{itemize}
+    \vspace{0.2cm}
+    \item \textbf{SmartMan 的核心目标}
+    \begin{itemize}
+      \item \textbf{系统资源}：极低的显存与 CPU 占用，消费级/办公级硬件轻松平替。
+      \item \textbf{响应速度}：首字延迟（TTFT）与吞吐速度优于跨网连接的云端大模型浏览器网页，实现真正的“即搜即用”。
+    \end{itemize}
+  \end{itemize}
+\end{frame}
+
+\section{数据与预处理}
+
+\begin{frame}{实验数据与基座模型选择}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{block}{基座模型 (Base Model)}
+                \textbf{Qwen2.5-Coder-1.5B-Instruct}
+                \begin{itemize}
+                    \item \textbf{规模与效率}：1.5B 轻量级参数，兼顾端侧推理速度与显存友好度。
+                    \item \textbf{能力对齐}：原生具备强大的中英文代码理解与指令遵循能力。
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.48\textwidth}
+            % 使用 \footnotemark 占位，避免在 Column/Block 内部直接用 \footnote 导致渲染失败
+            \begin{block}{核心数据集 (Dataset)}
+                \textbf{NL2Bash 语料库}\footnotemark
+                \begin{itemize}
+                    \item \textbf{数据规模}：精选总计约 10k 条高效「自然语言-Bash命令」对。
+                    \item \textbf{任务目标}：覆盖文件管理、文本处理、系统监控等高频 Linux 运维场景。
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+    
+    % 在 columns 外部底层统一释放脚注内容
+    \footnotetext{Lin et al. Program Synthesis from Natural Language Using RNNs. 从自然语言到Bash. 2017.}
+\end{frame}
+\begin{frame}{数据工程与预处理流水线}
+    \begin{block}{数据划分与规整}
+        按照 \textbf{8 : 1 : 1} 的比例严格划分训练集、验证集和测试集，确保评估结果的泛化性。
+    \end{block}
+
+    \begin{block}{ChatML 格式对齐与 System Prompt 约束}
+        全量转换为标准 \textbf{ChatML} 格式（`jsonl`），在微调阶段显式注入高约束力的系统提示词：
+        \vspace{0.2cm}
+        \begin{quote}
+            \small
+            \color{darkgray}
+            \texttt{"role": "system", "content": "你是一个Linux专家，请根据用户的描述，输出对应的Bash命令。只输出命令本身，不要任何解释。"}
+        \end{quote}
+        \vspace{0.2cm}
+        \begin{itemize}
+            \item \textbf{核心目的}：强制约束模型输出边界，抑制小模型易出现的幻觉与解释性冗余。
+            \item \textbf{特殊 Token 维护}：统一将 \texttt{pad\_token} 桥接至 \texttt{eos\_token} ($\text{\textless|im\_end|\textgreater}$)，避免生成截断与死循环。
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{技术路线:LoRA \& 量化}
+  base Model量化：bf16,bnb4bit,int4
+  LoRA rank : 8,16,32
+  LoRA 层：所有线性层,仅注意力层，仅Q V
+\end{frame}
+
+\begin{frame}{技术路线：LoRA 与量化的参数空间}
+    \begin{itemize}
+        \setlength{\itemsep}{0.6ex} % 微微拉开一级菜单的行距，呼吸感更好
+        
+        % 第一部分：量化
+        \item \textbf{基座模型量化 (Quantization)}
+        \begin{itemize}
+            \item[-] \textbf{原生半精度：} \texttt{bfloat16}（保持混合精度训练稳定性）
+            \item[-] \textbf{高级量化：} BitsAndBytes \texttt{4-bit (NF4)} 兼顾精度与显存
+            \item[-] \textbf{常规整型：} \texttt{int4 / int8} 极致压缩显存上限
+        \end{itemize}
+        
+        \smallskip % 小段落间距隔开大块
+        
+        % 第二部分：SFT 精度
+        \item \textbf{SFT 训练策略 (Training Precision)}
+        \begin{itemize}
+            \item[-] \texttt{bf16} 纯净训练 \textbf{vs} \texttt{fp16} 混合精度训练切换
+        \end{itemize}
+        
+        \smallskip
+        
+        % 第三部分：LoRA 拓扑
+        \item \textbf{LoRA 超参数拓扑 (LoRA Matrix Topology)}
+        \begin{itemize}
+            \item[-] \textbf{本征秩 (Rank $r$)：} $8, 16, 32$ 梯度阶梯设计
+            \item[-] \textbf{缩放因子 ($\alpha$)：} 固定比例控制 $\alpha = 2 \times r$
+            \item[-] \textbf{挂载目标层 (Target Modules)：}
+            \begin{itemize}
+                \item \textbf{极致轻量：} 仅 \texttt{q\_proj, v\_proj}
+                \item \textbf{标准全包：} 仅注意力层 (\texttt{q, k, v, o})
+                \item \textbf{全面覆盖：} 所有线性层 (\texttt{All Linear})
+            \end{itemize}
+        \end{itemize}
+    \end{itemize}
+
+    \vfill % 把痛点精准推到最底部
+
+    \begin{alertblock}{排列组合痛点}
+        硬编码脚本会导致样板代码爆炸，亟需\textbf{工程化解耦}。
+    \end{alertblock}
+\end{frame}
+
+\begin{frame}[fragile]{技术路线：超参数组合的“爆炸”与 quicktune 框架}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \paragraph{微调参数空间的挑战}
+      在探索最佳微调策略时，我们需要面对大量参数的排列组合：
+      \begin{itemize}
+        \item \textbf{模型加载}：\texttt{bf16}, \texttt{int8}, \texttt{bnb/4bit}
+        \item \textbf{LoRA 策略}：仅 Q/V 层、仅 Attention、\texttt{all\_linear}
+        \item \textbf{SFT 参数}：学习率、Epoch 衰减、\texttt{packing}
+      \end{itemize}
+      \vspace{0.2cm}
+      \alert{\textbf{痛点}}：将上述变量硬编码到主脚本或打平塞入 YAML 会导致配置极其臃肿，且丧失静态类型检查（LSP）的支持。
+    \end{column}
+    
+    \begin{column}{0.5\textwidth}
+      \paragraph{quicktune 目录拓扑}
+      为此，我们自研了高度解耦的微调框架：
+\begin{semiverbatim}
+\scriptsize
+src/quicktune/
+├── \textbf{core/}              \textcolor{gray}{# 核心调度枢纽}
+│   ├── __init__.py
+│   └── \alert{manager.py}     \textcolor{gray}{# 注册中心 (Registry)}
+├── \textbf{recipes/}           \textcolor{gray}{# 原子化配置插件}
+│   ├── \textbf{lora/}         \textcolor{gray}{# LoRA 拓扑结构库}
+│   │   └── qwen.py
+│   ├── \textbf{models/}       \textcolor{gray}{# 量化与基座加载库}
+│   │   ├── bf16.py , bnb.py , int8.py
+│   └── \textbf{sft/}          \textcolor{gray}{# 训练超参策略库}
+│       └── bf16.py , fp16.py
+\end{semiverbatim}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}[fragile]{quicktune 核心机制：Registry 注册表模式}
+  \paragraph{设计哲学：高内聚与动态发现}
+  摒弃传统的 \texttt{import} 硬编码，采用工业界标准的 \textbf{Decorator (装饰器)} 模式，在模块导入时自动收集所有配置“图纸”。
+
+  \begin{block}{核心注册中心 (\texttt{core/manager.py})}
+\begin{minted}[fontsize=\scriptsize, linenos=false]{python}
+class TuneRegistry:
+    def __init__(self) -> None:
+        # 维护三大全局字典 (Zoo)
+        self.model_zoo: Dict[str, ModelBuilder] = {}
+        self.lora_zoo: Dict[str, LoraBuilder] = {}
+        self.sft_zoo: Dict[str, SFTBuilder] = {}
+
+    def register_lora(self, name: str):
+        def wrapper(builder: LoraBuilder) -> LoraBuilder:
+            if name in self.lora_zoo:
+                raise ValueError(f"Lora config {name} is already registered")
+            self.lora_zoo[name] = builder
+            return builder
+        return wrapper
+
+registry = TuneRegistry()
+\end{minted}
+  \end{block}
+\end{frame}
+
+\begin{frame}[fragile]{quicktune 核心机制：插件化 Recipes 与配置驱动}
+  \paragraph{制定严格的命名空间规范 (\texttt{<架构或精度>/<风格>})}
+  通过字典透传（\texttt{**kwargs}）保证灵活性，使得 Pipeline 入口只需极简的 YAML 即可动态组装出复杂的微调管线。
+
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{LoRA 插件示例 (\texttt{recipes/lora/qwen.py})}
+\begin{minted}[fontsize=\tiny, linenos=false]{python}
+@registry.register_lora("qwen/minimal")
+def build_lora_minimal(r: int=8, **kwargs):
+    """最节省参数的方案，仅更新 Q 和 V"""
+    return LoraConfig(
+        r=r, lora_alpha=2*r,
+        target_modules=["q_proj", "v_proj"],
+        bias="none", task_type="CAUSAL_LM"
+    )
+    
+@registry.register_lora("qwen/all_linear")
+def build_lora_all_linear(r: int=16, **kwargs):
+    return LoraConfig(
+        r=r, lora_alpha=2*r,
+        target_modules=["q_proj", "v_proj", "o_proj", 
+                        "gate_proj", "up_proj", ...],
+        task_type="CAUSAL_LM"
+    )
+\end{minted}
+      \end{block}
+    \end{column}
+
+    \begin{column}{0.48\textwidth}
+      \begin{block}{模型量化插件 (\texttt{recipes/models/bnb.py})}
+\begin{minted}[fontsize=\tiny, linenos=false]{python}
+@registry.register_model("bnb/4bit")
+def build_model_4bit(model_id: str):
+    """标准的 QLoRA 4-bit 加载配置"""
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+    )
+    return AutoModelForCausalLM.from_pretrained(
+        model_id,
+        quantization_config=bnb_config,
+        device_map="auto"
+    )
+\end{minted}
+      \end{block}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\section{评估指标 \& Benchmark}
+
+% Slide 1: Overview
+\begin{frame}{评估指标体系总览}
+    在 NL2Bash（自然语言转 Bash 命令）任务中，单一的指标难以全面衡量模型生成的质量。\\
+    我们的评估框架从\textbf{序列绝对匹配}、\textbf{词级重合度}、\textbf{语法正确性}、\textbf{字面相似度}以及\textbf{长度偏置}五个维度进行全方位评估：
+    
+    \vspace{0.3cm}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \begin{block}{字词与序列层级}
+                \begin{itemize}
+                    \item \textbf{S-EM}: 严格完全匹配率
+                    \item \textbf{BLEU}: 词级 N-gram 重合度
+                    \item \textbf{Soft-EM\_F1}: 自由词频 F1 分数
+                \end{itemize}
+            \end{block}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \begin{block}{语法、字面与统计层级}
+                \begin{itemize}
+                    \item \textbf{Syntax\_Pass}: Bash 语法通过率
+                    \item \textbf{Edit\_Sim}: 字符级编辑相似度
+                    \item \textbf{Len\_Ratio}: 预测序列长度比
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+% Slide 2: S-EM
+\begin{frame}{1. S-EM (Strict Exact Match) — 严格完全匹配}
+    \begin{itemize}
+        \item \textbf{定义}：评估模型生成的 Bash 命令在切词（Tokenization）后，是否与真实标签（Ground Truth）\textbf{完全一致}（包括顺序与内容）。
+        \item \textbf{预处理逻辑}：
+        \begin{enumerate}
+            \item 清除首尾空格，将连续的多空格合并为单空格。
+            \item 将所有双引号 `"` 替换为单引号 `'` 以消除引用风格差异。
+            \item 使用 \texttt{shlex.split()} 进行符合标准 Shell 语义的切词。
+        \end{enumerate}
+        \item \textbf{数学表达}：
+        $$\text{S-EM} = \begin{cases} 
+        1, & \text{if } \text{Tokens}_{\text{pred}} = \text{Tokens}_{\text{ref}} \\ 
+        0, & \text{otherwise} 
+        \end{cases}$$
+        \item \textbf{特点}：最严苛的指标。即使语义等价，若指令参数顺序不同或使用了不同的同义命令（如 \texttt{g++} vs \texttt{gcc}），也会被判为 0 分。
+    \end{itemize}
+\end{frame}
+
+% Slide 3: BLEU
+\begin{frame}{2. BLEU (Bilingual Evaluation Understudy) — 词级重合度}
+    \begin{itemize}
+        \item \textbf{定义}：衡量预测命令与真实命令之间 N-gram 元组的重合百分比。常用于机器翻译和代码生成评测。
+        \item \textbf{实现细节}：基于 \texttt{nltk.translate.bleu\_score} 实现。
+        \begin{itemize}
+            \item \textbf{输入}：清洗并切词后的 Token 列表。
+            \item \textbf{平滑函数}：采用了 \texttt{SmoothingFunction().method4}。
+        \end{itemize}
+        \item \textbf{平滑意义}：由于 Bash 命令通常较短（N-gram 匹配极易因某个词不匹配而在高阶处归零），Method 4 通过对没有匹配上的高阶 N-gram 赋予一个微小的虚拟计数，避免了短文本下 BLEU 得分陡降为 0 的问题。
+        \item \textbf{分值区间}：$0.0 \sim 100.0$（最终结果乘以 100 转化为百分比）。
+    \end{itemize}
+\end{frame}
+
+% Slide 4: Syntax_Pass
+\begin{frame}{3. Syntax\_Pass — Bash 语法通过率}
+    \begin{itemize}
+        \item \textbf{定义}：独立于真实标签，仅检验模型生成的代码是否是一个\textbf{合法的 Bash 脚本}。
+        \item \textbf{检测核心}：调用 Python 的 \texttt{bashlex} 库对预测出的文本进行抽象语法树（AST）解析。
+        \item \textbf{判定逻辑}：
+        \begin{itemize}
+            \item \textbf{成功 (1)}：解析无误，或触发 \texttt{NotImplementedError}（属于 \texttt{bashlex} 自身局限，不代表语法错误）。
+            \item \textbf{失败 (0)}：抛出 \texttt{bash\_errors.ParsingError} 或其他解析异常（如括号未闭合、管道符非法使用等）。
+        \end{itemize}
+        \item \textbf{指标价值}：NL2Bash 的关键护栏指标。即使逻辑与真值稍有偏差，高语法通过率也说明模型具备基本的代码成型能力。
+    \end{itemize}
+\end{frame}
+
+% Slide 5: Soft-EM_F1
+\begin{frame}{4. Soft-EM\_F1 — 词级 F1 分数（弱完全匹配）}
+    \begin{itemize}
+        \item \textbf{定义}：忽略 Token 的先后顺序，仅关注预测集合与真值集合在\textbf{词频与内容}上的交集大小。通过计算精确率（Precision）和召回率（Recall）的调和平均值求得。
+        \item \textbf{匹配机制}：使用状态数组对真值进行打标（去重匹配计数），准确处理重复 Token 的情况。
+        \item \textbf{计算公式}：
+        $$\text{Precision} = \frac{\text{Common Tokens}}{\text{Len}(\text{Tokens}_{\text{pred}})}, \quad \text{Recall} = \frac{\text{Common Tokens}}{\text{Len}(\text{Tokens}_{\text{ref}})}$$
+        $$\text{Soft-EM\_F1} = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
+        \item \textbf{适用场景}：非常适合评估允许参数无序调换的命令。例如：\texttt{ls -l -a} 与 \texttt{ls -a -l} 在本指标下可获得 100\% 的满分。
+    \end{itemize}
+\end{frame}
+
+% Slide 6: Edit_Sim & Len_Ratio
+\begin{frame}{5 \& 6. Edit\_Sim (编辑相似度) 与 Len\_Ratio (长度比)}
+    \begin{block}{5. Edit\_Sim — 字符级字面相似度}
+        \begin{itemize}
+            \item \textbf{原理}：利用 Python 内置 \texttt{difflib.SequenceMatcher} 计算字符维度的相似比例。
+            \item \textbf{公式}：$\text{Ratio} = \frac{2 \cdot M}{T}$ （其中 $M$ 为匹配字符数，$T$ 为两文本总字符数）。
+            \item \textbf{作用}：能够敏锐发现拼写错误。如将 \texttt{grep} 错拼为 \texttt{gerp} 时，词级指标全挂，但编辑相似度依然处于高位，能保留局部正确的语义评价。
+        \end{itemize}
+    \end{block}
+
+    \begin{block}{6. Len\_Ratio — 预测序列长度比}
+        \begin{itemize}
+            \item \textbf{公式}：$$\text{Len\_Ratio} = \frac{\text{Len}(\text{Tokens}_{\text{pred}})}{\max(1, \text{Len}(\text{Tokens}_{\text{ref}}))}$$
+            \item \textbf{作用}：监控大模型的“幻觉”与“复读机”倾向。如果该值远大于 100\%，说明模型倾向于过度输出或陷入死循环；远小于 100\% 则说明生成发生了解码截断。
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+% Slide 7: Summary Table
+\begin{frame}{输出结果 DataFrame 字段映射指南}
+    每次评估完毕后，系统将自动汇总以下字段并排序落盘：
+    
+    \vspace{0.2cm}
+    \begin{table}
+        \small
+        \centering
+        \begin{tabular}{lll}
+            \toprule
+            \textbf{字段名称} & \textbf{对应指标/配置} & \textbf{度量形式/作用} \\
+            \midrule
+            \texttt{quant\_config} & 量化与模型架构配置项 & 分组基准 \\
+            \texttt{lora\_name} & LoRA 微调权重名称 & 分组基准 \\
+            \textbf{\texttt{S-EM}} & 严格完全匹配率 (Strict EM) & 0\% $\sim$ 100\% (主排序依据) \\
+            \textbf{\texttt{BLEU}} & 句子级平滑 BLEU 分数 & 0\% $\sim$ 100\% \\
+            \textbf{\texttt{Syntax\_Pass}} & Bash 语法解析通过率 & 0\% $\sim$ 100\% \\
+            \textbf{\texttt{Soft-EM\_F1}} & 词级无序 F1 值 (Soft EM) & 0\% $\sim$ 100\% \\
+            \textbf{\texttt{Edit\_Sim}} & 字符级编辑距离相似度 & 0\% $\sim$ 100\% \\
+            \textbf{\texttt{Len\_Ratio}} & 词数长度比 (Prediction / GT) & 百分比 (理想值为 100\%) \\
+            \bottomrule
+        \end{tabular}
+    \end{table}
+\end{frame}
+
+\begin{frame}{Benchmark}
+    \begin{table}[h]
+        \centering
+        \caption{LoRA 与量化配置在 NL2Bash 任务上的性能对比}
+        % 限制最大宽度与高度，确保 16 行庞大表格在单页 Beamer 中完美缩放，绝不爆框
+        \begin{adjustbox}{max width=\textwidth, max height=0.72\textheight} 
+        \scriptsize 
+        \begin{tabular}{llcccccc}
+            \toprule
+            \textbf{Quant} & \textbf{LoRA Name} & \textbf{S-EM (\%)} & \textbf{BLEU} & \textbf{Syn-Pass (\%)} & \textbf{Soft-$F_1$ (\%)} & \textbf{Edit-Sim} & \textbf{Len-Ratio (\%)} \\
+            \midrule
+            bf16 & qwenInstruct\_short0501\_0107  & \textbf{14.91} & \textbf{30.78} & 99.05 & \textbf{61.25} & \textbf{72.51} & 112.34 \\
+            bnb/4bit & qwenInstruct\_short0501\_2322  & 14.35 & 30.34 & 98.41 & 60.91 & 72.38 & 112.80 \\
+            bnb/4bit & qwenInstruct\_short\_larger\_r0502\_1501  & 14.27 & 29.31 & 98.97 & 60.45 & 71.65 & \textbf{109.68} \\
+            bnb/4bit & qwenInstruct\_larger\_r0502\_0011  & 13.56 & 27.95 & \textbf{99.44} & 59.39 & 71.03 & 110.08 \\
+            bf16 & qwenInstruct\_short0501\_2322  & 13.48 & 27.95 & 98.89 & 59.24 & 70.91 & 113.12 \\
+            bf16 & qwenInstruct0429\_1852  & 13.24 & 29.36 & 98.97 & 60.09 & 71.84 & 111.90 \\
+            bf16 & qwenInstruct\_short\_larger\_r0502\_1501  & 12.21 & 26.57 & 99.13 & 59.00 & 70.94 & 111.88 \\
+            bf16 & qwenInstruct\_larger\_r0502\_0011  & 11.50 & 25.96 & 99.05 & 58.30 & 70.51 & 110.00 \\
+            bnb/4bit & qwenInstruct\_short0501\_0107  & 9.83 & 25.66 & 97.86 & 56.88 & 68.94 & 121.50 \\
+            bf16 & qwenInstruct\_smaller\_r0502\_1424  & 9.36 & 22.37 & 99.05 & 53.62 & 67.04 & 113.73 \\
+            bnb/4bit & qwenInstruct\_smaller\_r0502\_1424  & 8.88 & 22.79 & 98.97 & 54.44 & 67.17 & 116.71 \\
+            bnb/4bit & qwenInstruct0429\_1852  & 8.88 & 24.94 & 99.05 & 56.26 & 67.81 & 123.57 \\
+            bf16 & qwen0429\_1607  & 7.30 & 19.19 & 98.18 & 49.28 & 62.34 & 138.48 \\
+            bf16 & Base\_Model  & 6.03 & 16.46 & 98.57 & 43.65 & 59.79 & 115.70 \\
+            bnb/4bit & qwen0429\_1607  & 4.04 & 14.58 & 97.54 & 41.49 & 58.29 & 156.68 \\
+            bnb/4bit & Base\_Model  & 1.51 & 12.10 & 98.41 & 35.84 & 54.37 & 136.73 \\
+            \bottomrule
+        \end{tabular}
+        \end{adjustbox}
+    \end{table}
+\end{frame}
+
+% Slide 8: Result Analysis - SFT vs Base
+\begin{frame}{实验结果分析：LoRA 微调与基座对比}
+    \begin{itemize}
+        \item \textbf{微调带来质的飞跃 (对比 Base Model)}
+        \begin{itemize}
+            \item 未经微调的 \texttt{Base\_Model (bf16)} 的严格完全匹配率 (S-EM) 仅为 \textbf{6.03\%}，BLEU 为 \textbf{16.46}。
+            \item 微调后的最优 Checkpoint 实现了 S-EM \textbf{14.91\%} (相对提升 \textbf{147.3\%})，BLEU 翻倍至 \textbf{30.78}，证明了针对性 SFT 的必要性。
+        \end{itemize}
+        
+        \vspace{0.2cm}
+        \item \textbf{指令对齐基座 (Instruct) 优势显著}
+        \begin{itemize}
+            \item 基于 \texttt{qwenInstruct} 基座的微调表现 (\text{S-EM} $\ge$ 8.88\%) 普遍远超纯基准基座的微调 (\texttt{qwen0429} 仅 7.30\%)。
+            \item \textbf{结论}：通用指令对齐赋予了模型更好的任务边界依从性，从而大幅提升了下游代码生成任务的微调上限。
+        \end{itemize}
+        
+        \vspace{0.2cm}
+        \item \textbf{幻觉与冗余输出的有效控制}
+        \begin{itemize}
+            \item \texttt{Base\_Model} 表现出严重的“复读”或“解释”倾向，导致其长度比 (\texttt{Len-Ratio}) 严重偏高 (\textbf{136.73\%})。
+            \item 最优 Recipe 成功将 \texttt{Len-Ratio} 压制在 \textbf{109\% $\sim$ 112\%}，输出形式更逼近真实脚本。
+        \end{itemize}
+    \end{itemize}
+\end{frame}
+
+% Slide 9: Result Analysis - Quantization & Robustness
+\begin{frame}{实验结果分析：量化损耗与生成鲁棒性}
+    \begin{columns}[T]
+        \begin{column}{0.5\textwidth}
+            \begin{block}{4-bit 量化表现出极高的「抗损性」}
+                \begin{itemize}
+                    \item \textbf{差距微弱}：\texttt{bf16} 顶峰 S-EM 为 \textbf{14.91\%}，而 \texttt{bnb/4bit} 顶峰为 \textbf{14.35\%}，性能损耗仅为 \textbf{0.56\%}。
+                    \item \textbf{工程落地价值}：在大幅压缩显存占用的前提下，4-bit 量化几乎实现了对语义泛化能力的\textbf{无损压缩}。
+                \end{itemize}
+            \end{block}
+        \end{column}
+        
+        \begin{column}{0.5\textwidth}
+            \begin{block}{语法通过率 (Syn-Pass) 形成安全护栏}
+                \begin{itemize}
+                    \item 纵观所有测试组合，模型的语法通过率表现极为稳健，均维持在 \textbf{97.5\% $\sim$ 99.5\%} 的超高区间。
+                    \item \textbf{结论}：评测的主要瓶颈不在于“写出合法的 Bash 语法”，而在于“精准切中用户意图的参数排列 (S-EM)”。
+                \end{itemize}
+            \end{block}
+        \end{column}
+    \end{columns}
+
+    \vspace{0.4cm}
+    \begin{exampleblock}{最优模型配置总结 (qwenInstruct\_short)}
+        依托 \textbf{Qwen2.5-1.5B-Instruct} 为基座，采用 \textbf{bnb/4bit 基础量化 + 全线性层 LoRA (r=16)}，在 \textbf{2e-4} 学习率下历经 \textbf{5 个 Epoch} 的 Packing SFT 训练，取得了兼顾显存经济性与生成性能的帕累托最优解。
+    \end{exampleblock}
+\end{frame}
+
+\begin{frame}[standout]
+  谢谢大家！
+\end{frame}
+\end{document}
