@@ -335,8 +335,7 @@ def build_model_4bit(model_id: str):
     \end{columns}
 \end{frame}
 
-% Slide 2: S-EM
-\begin{frame}{1. S-EM (Strict Exact Match) — 严格完全匹配}
+\begin{frame}{S-EM (Strict Exact Match) — 严格完全匹配}
     \begin{itemize}
         \item \textbf{定义}：评估模型生成的 Bash 命令在切词（Tokenization）后，是否与真实标签（Ground Truth）\textbf{完全一致}（包括顺序与内容）。
         \item \textbf{预处理逻辑}：
@@ -354,8 +353,18 @@ def build_model_4bit(model_id: str):
     \end{itemize}
 \end{frame}
 
-% Slide 3: BLEU
-\begin{frame}{2. BLEU (Bilingual Evaluation Understudy) — 词级重合度}
+\begin{frame}{Soft-EM\_F1 — 词级 F1 分数（弱完全匹配）}
+    \begin{itemize}
+        \item \textbf{定义}：忽略 Token 的先后顺序，仅关注预测集合与真值集合在\textbf{词频与内容}上的交集大小。通过计算精确率（Precision）和召回率（Recall）的调和平均值求得。
+        \item \textbf{匹配机制}：使用状态数组对真值进行打标（去重匹配计数），准确处理重复 Token 的情况。
+        \item \textbf{计算公式}：
+        $$\text{Precision} = \frac{\text{Common Tokens}}{\text{Len}(\text{Tokens}_{\text{pred}})}, \quad \text{Recall} = \frac{\text{Common Tokens}}{\text{Len}(\text{Tokens}_{\text{ref}})}$$
+        $$\text{Soft-EM\_F1} = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
+        \item \textbf{适用场景}：非常适合评估允许参数无序调换的命令。例如：\texttt{ls -l -a} 与 \texttt{ls -a -l} 在本指标下可获得 100\% 的满分。
+    \end{itemize}
+\end{frame}
+
+\begin{frame}{BLEU (Bilingual Evaluation Understudy) — 词级重合度}
     \begin{itemize}
         \item \textbf{定义}：衡量预测命令与真实命令之间 N-gram 元组的重合百分比。常用于机器翻译和代码生成评测。
         \item \textbf{实现细节}：基于 \texttt{nltk.translate.bleu\_score} 实现。
@@ -368,8 +377,7 @@ def build_model_4bit(model_id: str):
     \end{itemize}
 \end{frame}
 
-% Slide 4: Syntax_Pass
-\begin{frame}{3. Syntax\_Pass — Bash 语法通过率}
+\begin{frame}{Syntax\_Pass — Bash 语法通过率}
     \begin{itemize}
         \item \textbf{定义}：独立于真实标签，仅检验模型生成的代码是否是一个\textbf{合法的 Bash 脚本}。
         \item \textbf{检测核心}：调用 Python 的 \texttt{bashlex} 库对预测出的文本进行抽象语法树（AST）解析。
@@ -382,20 +390,8 @@ def build_model_4bit(model_id: str):
     \end{itemize}
 \end{frame}
 
-% Slide 5: Soft-EM_F1
-\begin{frame}{4. Soft-EM\_F1 — 词级 F1 分数（弱完全匹配）}
-    \begin{itemize}
-        \item \textbf{定义}：忽略 Token 的先后顺序，仅关注预测集合与真值集合在\textbf{词频与内容}上的交集大小。通过计算精确率（Precision）和召回率（Recall）的调和平均值求得。
-        \item \textbf{匹配机制}：使用状态数组对真值进行打标（去重匹配计数），准确处理重复 Token 的情况。
-        \item \textbf{计算公式}：
-        $$\text{Precision} = \frac{\text{Common Tokens}}{\text{Len}(\text{Tokens}_{\text{pred}})}, \quad \text{Recall} = \frac{\text{Common Tokens}}{\text{Len}(\text{Tokens}_{\text{ref}})}$$
-        $$\text{Soft-EM\_F1} = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}{\text{Precision} + \text{Recall}}$$
-        \item \textbf{适用场景}：非常适合评估允许参数无序调换的命令。例如：\texttt{ls -l -a} 与 \texttt{ls -a -l} 在本指标下可获得 100\% 的满分。
-    \end{itemize}
-\end{frame}
 
-% Slide 6: Edit_Sim & Len_Ratio
-\begin{frame}{5 \& 6. Edit\_Sim (编辑相似度) 与 Len\_Ratio (长度比)}
+\begin{frame}{Edit\_Sim (编辑相似度) 与 Len\_Ratio (长度比)}
     \begin{block}{5. Edit\_Sim — 字符级字面相似度}
         \begin{itemize}
             \item \textbf{原理}：利用 Python 内置 \texttt{difflib.SequenceMatcher} 计算字符维度的相似比例。
@@ -469,7 +465,6 @@ def build_model_4bit(model_id: str):
         \end{adjustbox}
     \end{table}
 \end{frame}
-
 % Slide 8: Result Analysis - SFT vs Base
 \begin{frame}{实验结果分析：LoRA 微调与基座对比}
     \begin{itemize}
@@ -522,7 +517,14 @@ def build_model_4bit(model_id: str):
         依托 \textbf{Qwen2.5-1.5B-Instruct} 为基座，采用 \textbf{bnb/4bit 基础量化 + 全线性层 LoRA (r=16)}，在 \textbf{2e-4} 学习率下历经 \textbf{5 个 Epoch} 的 Packing SFT 训练，取得了兼顾显存经济性与生成性能的帕累托最优解。
     \end{exampleblock}
 \end{frame}
-
+\begin{frame}{smartman-cli}
+  最终落地产品smartman-cli
+  \begin{itemize}
+    \item 三款不同量化程度的gguf
+    \item llamafile通用推理后端
+    \item Rust编写的轻量化REPL客户端
+  \end{itemize}
+\end{frame}
 \begin{frame}[standout]
   谢谢大家！
 \end{frame}
