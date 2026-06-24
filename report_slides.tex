@@ -77,7 +77,7 @@
 \end{frame}
 
 \begin{frame}[fragile]{设计哲学与目标}
-  致敬 UNIX 哲学:\textbf{“Do one job and do it right.”}
+  UNIX 哲学:\textbf{“Do one job and do it right.”}
 
     \begin{itemize}
     \item \textbf{设计思路}
@@ -100,7 +100,7 @@
     \begin{columns}[T]
         \begin{column}{0.48\textwidth}
             \begin{block}{基座模型 (Base Model)}
-                \textbf{Qwen2.5-Coder-1.5B-Instruct}
+                \textbf{Qwen2.5-1.5B-Instruct}
                 \begin{itemize}
                     \item \textbf{规模与效率}：1.5B 轻量级参数，兼顾端侧推理速度与显存友好度。
                     \item \textbf{能力对齐}：原生具备强大的中英文代码理解与指令遵循能力。
@@ -142,12 +142,6 @@
             \item \textbf{特殊 Token 维护}：统一将 \texttt{pad\_token} 桥接至 \texttt{eos\_token} ($\text{\textless|im\_end|\textgreater}$)，避免生成截断与死循环。
         \end{itemize}
     \end{block}
-\end{frame}
-
-\begin{frame}{技术路线:LoRA \& 量化}
-  base Model量化：bf16,bnb4bit,int4
-  LoRA rank : 8,16,32
-  LoRA 层：所有线性层,仅注意力层，仅Q V
 \end{frame}
 
 \begin{frame}{技术路线：LoRA 与量化的参数空间}

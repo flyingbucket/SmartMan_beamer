@@ -1,0 +1,234 @@
+\documentclass[UTF8,a4paper,12pt]{ctexart}
+
+% ===== 页面与排版 =====
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{setspace}
+\setstretch{1.2}
+\usepackage{indentfirst}
+% ===== 论文风标题样式 =====
+\usepackage{titlesec}
+
+% section 标题：不那么大，不用巨黑的黑体
+\titleformat{\section}
+  {\Large\bfseries} % 样式：稍大 + 加粗
+  {\thesection}{0.8em}{}
+
+\titleformat{\subsection}
+  {\large\bfseries}
+  {\thesubsection}{0.8em}{}
+
+\titleformat{\subsubsection}
+  {\normalsize\bfseries}
+  {\thesubsubsection}{0.8em}{}
+
+\titlespacing*{\section}{0pt}{1.5ex plus .2ex minus .2ex}{0.8ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus .2ex minus .2ex}{0.6ex}
+\titlespacing*{\subsubsection}{0pt}{1.0ex plus .2ex minus .2ex}{0.5ex}
+
+% ===== 数学/算法/代码 =====
+\usepackage{amsmath,amssymb}
+\usepackage{bm}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{xcolor}
+
+% ===== 表格/图片/链接 =====
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue
+}
+
+% ===== 自定义：代码高亮（可按需改）=====
+\lstdefinestyle{mystyle}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{teal},
+  breaklines=true,
+  showstringspaces=false,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  xleftmargin=2em,
+  framexleftmargin=1.5em
+}
+\lstset{style=mystyle}
+
+\floatname{algorithm}{算法}
+\renewcommand{\algorithmicrequire}{输入：}
+\renewcommand{\algorithmicensure}{输出：}
+
+
+\title{SmartMan交付物说明}
+\author{李孟霖\quad 屈阳\quad 刘治权\quad 赵浦渊}
+\date{}
+
+\begin{document}
+\maketitle{}
+\section{数据简介}
+本项目所使用的基础语料库来源于开源项目 \texttt{NL2Bash}~\cite{LinWZE2018:NL2Bash}。
+该数据集构建了类Unix操作系统（包含Linux BSD MacOS）bash命令与自然语言数据对的语料库。
+
+在本项目中为了更加贴合现代对话模型微调的任务，我们将该语料库整理为ChatML格式，
+按照8:1:1的标准比例划分为训练集、验证集、测试集。
+
+\section{GitHub Repo}
+本项目以MIT协议开源所有代码，已经发布在github上，具体仓库地址如下:
+https://github.com/flyingbucket/SmartMan
+
+\section{项目说明文档}
+\subsection{项目简介}
+SmartMan 是一个从微调到落地的 \texttt{NL2Bash} 项目，提供完整的微调训练链路、评测流程，以及使用 Rust 语言实现的本地命令行客户端。项目的核心目标是将自然语言（Natural Language）描述稳定、准确地转换为可执行的 Bash 命令，并支持微调训练、系统评估与本地高效推理部署。
+
+\subsection{核心特性}
+% \begin{itemize}[leftmargin=*]
+\begin{itemize}
+  \item \textbf{QuickTune 微调框架}：提供轻量且可扩展的微调注册与配方（Recipe）机制，实现模型、LoRA 以及 SFT 配置的统一管理与高度复用。
+    \item \textbf{微调 Pipeline}：覆盖数据准备、模型训练、指标评估以及模型权重合并的完整闭环流程。
+    \item \textbf{smartman-cli 客户端}：基于 Rust 语言实现的交互式命令行工具（CLI），可无缝连接本地 LLM 推理引擎，在终端内提供流畅的 \texttt{NL2Bash} 交互体验。
+\end{itemize}
+
+\subsection{目录结构}
+项目代码仓库的整体目录结构如下所示：
+\newpage
+\begin{lstlisting}[language=bash, numbers=none, caption=项目目录树结构]
+.
+├── src/
+│   ├── quicktune/          # QuickTune 微调框架核心代码
+│   └── smartman/           # 训练与评估 Pipeline 逻辑
+├── scripts/                # 数据处理、微调、评测及模型合并脚本
+├── configs/                # 训练与评估的配置文件示例（YAML）
+├── data/                   # 数据目录（包含原始数据与处理后的数据集）
+└── smartman-cli/           # Rust 实现的 CLI 客户端源码
+\end{lstlisting}
+
+\subsection{环境准备}
+推荐使用 Conda 虚拟环境进行环境隔离与依赖管理：
+
+\begin{lstlisting}[language=bash]
+# 创建 Conda 环境
+conda env create -f environment.yaml
+# 激活 Conda 环境
+conda activate smartman
+\end{lstlisting}
+
+或者，您也可以直接通过 \texttt{pip} 工具进行依赖安装：
+
+\begin{lstlisting}[language=bash]
+pip install -r requirements.txt
+pip install -e .
+\end{lstlisting}
+
+\subsection{QuickTune 微调框架}
+QuickTune 框架通过高度解耦的注册表机制（Registry）来管理模型、LoRA 权重与 SFT 配置：
+\begin{itemize}
+    \item \texttt{src/quicktune/core/manager.py} 提供了统一的组件注册与加载入口。
+    \item \texttt{src/quicktune/recipes/} 目录下的可用配方（Recipes）会在运行时被自动扫描并加载。
+\end{itemize}
+在启动训练时，用户只需在配置文件中通过名称引用特定的 recipe，即可实现不同训练策略的高效组合与快速复用。
+
+\subsection{微调 Pipeline}
+项目的训练与评估主入口位于 \texttt{src/smartman/main.py}，该脚本当前支持 \texttt{train}、\texttt{eval} 以及 \texttt{all} 三种运行模式。
+
+\subsubsection{配置示例}
+用户可参考 \texttt{configs/example.yaml} 配置文件，在其中定义以下核心要素：
+\begin{itemize}
+    \item 基座模型标识符 (\texttt{model\_id})
+    \item 训练与评估数据集路径 (\texttt{data\_dirs})
+    \item QuickTune 配方名称 (\texttt{recipe})
+    \item 评估细节配置 (\texttt{eval\_conf})
+\end{itemize}
+
+\subsubsection{训练与评估指令}
+通过指定 \texttt{--mode} 参数来切换不同的运行阶段：
+
+\begin{lstlisting}[language=bash]
+# 仅执行微调训练
+python -m smartman.main --config configs/example.yaml --mode train
+
+# 仅执行模型评估
+python -m smartman.main --config configs/example.yaml --mode eval
+
+# 顺序执行完整训练与评估流程
+python -m smartman.main --config configs/example.yaml --mode all
+\end{lstlisting}
+
+\subsubsection{关键脚本说明}
+\begin{description}
+    \item[\texttt{scripts/nl2bash.py}] 构建英文 \texttt{NL2Bash} 基础数据集。
+    \item[\texttt{scripts/make\_chinese\_data.py}] 生成中文 \texttt{NL2Bash} 针对性训练数据。
+    \item[\texttt{scripts/merge\_data.py}] 合并中英文训练集，构建混合语料。
+    \item[\texttt{scripts/tune.py}] 独立的微调脚本示例。
+    \item[\texttt{scripts/test\_model.py}] 推理测试与 LoRA 权重动态加载测试。
+    \item[\texttt{scripts/merge\_model.py}] 将训练得到的 LoRA 增量权重合并至基座模型。
+\end{description}
+
+\subsection{评估指标}
+评估流程集成了多维度的自然语言转命令指标，以全面衡量模型性能：
+\begin{itemize}
+    \item \textbf{S-EM (Strict Exact Match)}：严格准确匹配率
+    \item \textbf{BLEU}：双语互译孤立评测指标
+    \item \textbf{Syntax Pass}：Bash 语法通过率
+    \item \textbf{Soft-EM F1}：宽松准确匹配 F1 值
+    \item \textbf{Edit Similarity}：编辑距离相似度
+    \item \textbf{Length Ratio}：生成文本与目标文本长度比
+\end{itemize}
+评估生成的详细报表与结果将自动保存至 \texttt{eval\_results/} 目录中。
+
+\subsection{smartman-cli（Rust 客户端）}
+\texttt{smartman-cli} 旨在提供原生的本地交互式终端体验，默认接入本地的 \texttt{llamafile --server} 服务。
+
+\subsubsection{安装指南}
+推荐从 GitHub Release 页面获取对应操作系统的预编译版本进行安装。Release 包含一个默认的 \texttt{llamafile-thin} 引擎（体积小，仅支持 CPU 推理）。
+
+若需要更强劲的性能，可从 \texttt{llamafile} 官方仓库下载完整版引擎（支持更多算子与硬件加速），并通过 CLI 的安装命令将其接入。量化后的 GGUF 模型文件可从本仓库的 Release（ModelRelease）中下载。
+
+\subsubsection{引擎与模型安装命令}
+使用 CLI 将引擎与模型安装并链接至本地 assets 目录：
+
+\begin{lstlisting}[language=bash]
+# 安装完整版 llamafile 引擎（路径指向官方下载的引擎）
+smartman-cli install engine /path/to/llamafile --link
+
+# 安装量化 GGUF 模型（路径指向本仓库下载的模型）
+smartman-cli install model /path/to/model.gguf
+\end{lstlisting}
+
+\subsubsection{交互式使用说明}
+\begin{itemize}
+    \item \textbf{智能转换}：输入自然语言指令，客户端将实时返回转换后的 Bash 命令。
+    \item \textbf{便捷操作}：支持直接在终端内执行生成的命令，或一键复制到系统剪贴板。
+    \item \textbf{Shell 穿透}：在指令前加上 \texttt{!} 前缀，可直接穿透执行本地的常规 Shell 命令。
+\end{itemize}
+
+\subsection{开源协议}
+本项目基于 \textbf{MIT} 许可证开源。
+
+\section{测评报告}
+详见report.pdf报告slides的"评估指标 \& Benchmark"部分。
+
+\section{团队分工}
+\begin{itemize}
+  \item 李孟霖: quicktune框架及微调pipeline设计，落地软件smartman-cli开发
+  \item 屈阳: 数据整理和数据清洗，LoRA微调设计
+  \item 刘治权: SFT微调及量化参数设计,软件测试
+  \item 赵浦渊: 数据清洗与slides、报告撰写
+\end{itemize}
+
+% --- 参考文献部分 ---
+% 指定参考文献排版样式，plain 是最标准、按字母顺序排序的数字样式
+\bibliographystyle{plain} 
+% 导入你的 bib 文件（注意不需要写 .bib 后缀）
+\bibliography{reference}
+\end{document}
